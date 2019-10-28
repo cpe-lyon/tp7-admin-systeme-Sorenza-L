@@ -121,6 +121,7 @@ Dans cet exercice, on va créer et installer un module pour le noyau.
 
 ### 1. Commencez par installer le paquet build-essential, qui contient tous les outils nécessaires (compilateurs, bibliothèques) à la compilation de programmes en C (entre autres).
 
+Mon utilisateur est en root avec la commande **sudo -i**. L'installation se fait grâce à la commande **apt install build-essential**.
 
 ### 2. Créez un fichier hello.c contenant le code suivant :
 
@@ -148,24 +149,72 @@ Dans cet exercice, on va créer et installer un module pour le noyau.
 
 ### 3. Créez également un fichier Makefile :
 <pre>
-1 obj -m += hello.o
+1 obj-m += hello.o
 2
 3 all:
-4 make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+4 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 5
 6 clean:
-7 make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+7 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 8
 9 install:
-10 cp ./hello.ko /lib/modules/$(shell uname -r)/kernel/drivers/misc
+10	 cp ./hello.ko /lib/modules/$(shell uname -r)/kernel/drivers/misc
 </pre>
 
 ### 4. Compilez le module à l’aide de la commande make, puis installez-le à l’aide de la commande make install.
 
+La commande **make** nous retourne:
+<pre>
+root@serveur:~# make
+make -C /lib/modules/5.0.0-32-generic/build M=/root modules
+make[1]: Entering directory '/usr/src/linux-headers-5.0.0-32-generic'
+  CC [M]  /root/hello.o
+  Building modules, stage 2.
+  MODPOST 1 modules
+  CC      /root/hello.mod.o
+  LD [M]  /root/hello.ko
+make[1]: Leaving directory '/usr/src/linux-headers-5.0.0-32-generic'
+</pre>
+
+La commande **make install** nous retourne :
+<pre>
+root@serveur:~# make install
+cp ./hello.ko /lib/modules/5.0.0-32-generic/kernel/drivers/misc
+</pre>
+
 ### 5. Chargez le module ; vérifiez dans le journal du noyau que le message ”La fonction init_module() est appelée” a bien été inscrit, synonyme que le module a été chargé ; confirmez avec la commande lsmod.
+
+J'utilise la commande **insmod hello** je charge le module. J'utilise la commande **lsmod | grep hello** pour confirmer. Cette commande me retourne :
+
+<pre>
+root@serveur:~# lsmod | grep hello
+hello                  16384  0
+</pre>
+
 ### 6. Utilisez la commande modinfo pour obtenir des informations sur le module hello.ko ; vous devriez notamment voir les informations figurant dans le fichier C.
+
+La commande **modinfo hello.ko** nous renvoie :
+<pre>
+root@serveur:~# modinfo hello.ko
+filename:       /root/hello.ko
+version:        Version 1.00
+description:    Module hello world
+author:         John Doe
+license:        GPL
+srcversion:     74B14014F4AF07B199DD38A
+depends:
+retpoline:      Y
+name:           hello
+vermagic:       5.0.0-32-generic SMP mod_unload
+</pre>
+
 ### 7. Déchargez le module ; vérifiez dans le journal du noyau que le message ”La fonction cleanup_module() est appelée” a bien été inscrit, synonyme que le module a été déchargé ; confirmez avec la commande lsmod.
+
+On utilise la commande **rmmod hello.ko** pour pouvoir décharger le module. Puis je teste que le module est bien décharger avec **lsmod | grep hello**. En effet la commande précédante ne retourne rien.
+
 ### 8. Pour que le module soit chargé automatiquement au démarrage du système, il faut l’inscrire dans le fichier /etc/modules. Essayez, et vérifiez avec la commande lsmod après redémarrage de la machine.
+
+J'écris dans le fichier **/etc/modules-load.d/modules.conf** avec la ligne ***insmod hello.ko***.
 
 ## Exercice 3. Interception de signaux
 
@@ -174,19 +223,74 @@ Un cas d’utilisation typique est la suppression des fichiers temporaires cré�
 interrompu.
 
 ### 1. Commencez par écrire un script qui recopie dans un fichier tmp.txt chaque ligne saisie au clavier par l’utilisateur
+
+<pre>
+laplume@serveur:~/script$ cat tmp.sh
+#!/bin/bash
+
+while (true); do
+read text
+echo $text >> tmp.txt
+done
+</pre>
+
 ### 2. Lancez votre script et appuyez sur CTRL+Z. Que se passe-t-il ? Comment faire pour que le script poursuive son exécution ?
+
+L'exécution du script s'éffectue en arrière plan:
+<pre>
+laplume@serveur:~/script$ ./tmp.sh
+^Z
+[1]+  Stopped                 ./tmp.sh
+</pre>
+
+Pour reprendre son exécution j'utilise la commande **bg** qui renvoie :
+<pre>
+laplume@serveur:~/script$ bg
+[1]+ ./tmp.sh &
+</pre>
+
 ### 3. Toujours pendant l’exécution du script, appuyez sur CTRL+C. Que se passe-t-il ?
+
+CRTL+C met fin à l'exécution du script.
+
 ### 4. Modifiez votre script pour redéfinir les actions à effectuer quand le script reçoit les signaux SIGTSTP (= CTRL+Z) et SIGINT (= CTRL+C) : dans le premier cas, il doit afficher ”Impossible de me placer en arrière-plan”, et dans le second cas, il doit afficher ”OK, je fais un peu de ménage avant” avant de supprimer le fichier temporaire et terminer le script.
+
+<pre>
+laplume@serveur:~/script$ cat tmp.sh
+#!/bin/bash
+trap ctrl_c INT
+trap ctrl_z SIGTSTP
+
+function ctrl_c(){
+        echo " OK, je fait un peu de ménage avant"
+        rm tmp.txt
+        exit
+}
+
+function ctrl_z(){
+        echo " Impossible de me placer en arrière-plan"
+}
+
+while (true); do
+read text
+echo $text >> tmp.txt
+done
+</pre>
+
 ### 5. Testez le nouveau comportement de votre script en utilisant d’une part les raccourcis clavier, d’autre part la commande kill
-### 6. Relancez votre script et faites immédiatement un CTRL+C : vous obtenez un message d’erreur vous indiquant que le fichier tmp.txt n’existe pas. A l’aide de la commande interne test, corrigez votre script pour que ce message n’apparaisse plus.
 
-## Exercice 4. Surveillance de l’activité du système
+Les comportements avec les raccourcis clavier sont:
 
-### 1. Dans tty1, lancez la commande htop, puis tapez la commande w dans tty2. Qu’affiche cette commande ?
-### 2. Comment afficher l’historique des dernières connexions à la machine ?
-### 3. Quelle commande permet d’obtenir la version du noyau ?
-### 4. Comment récupérer toutes les informations sur le processeur, au format JSON ?
-### 5. Comment obtenir la liste des derniers démarrages de la machine avec la commande journalctl ? Comment afficher tout ce qu’il s’est passé sur la machine lors de l’avant-dernier boot ?
-### 6. Comment obtenir la liste des derniers démarrages de la machine avec la commande journalctl ?
-### 7. Faites en sortes que lors d’une connexion à la machine, les utilisateurs soient prévenus par un message à l’écran d’une maintenance le 26 mars à minuit.
-### 8. Ecrivez un script bash qui permet de calculer le k-ième nombre de Fibonacci : Fk = Fk−1 + Fk−2, avec F0 = F1 = 1. Lancez le calcul de F100 puis lancez la commande tload depuis un autre terminal virtuel. Que constatez-vous ? Interrompez ensuite le calcul avec CTRL+C et observez la conséquence sur l’affichage de tload.
+<pre>
+laplume@serveur:~/script$ ./tmp.sh
+^C OK, je fait un peu de ménage avant
+laplume@serveur:~/script$ ./tmp.sh
+^Z Impossible de me placer en arrière-plan
+</pre>
+
+Le comportement avec la commande kill est :
+
+<pre>
+laplume@serveur:~/script$ ./tmp.sh
+KILL
+</pre>
